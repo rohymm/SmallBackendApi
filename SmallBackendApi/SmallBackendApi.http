@@ -1,0 +1,6 @@
+@SmallBackendApi_HostAddress = http://localhost:5063
+
+GET {{SmallBackendApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
