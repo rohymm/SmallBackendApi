@@ -1,4 +1,3 @@
-
 namespace SmallBackendApi
 {
     public class Program
@@ -8,8 +7,14 @@ namespace SmallBackendApi
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
+            builder.Services.AddDbContext<AppDbContext>();
 
-            builder.Services.AddControllers();
+            // This updated line fixes the object cycle error
+            builder.Services.AddControllers().AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+            });
+
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
