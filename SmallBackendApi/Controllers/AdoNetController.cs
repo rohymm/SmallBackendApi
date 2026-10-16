@@ -294,5 +294,145 @@ namespace SmallBackendApi.Controllers
                 return StatusCode(500, $"Database error: {ex.Message}");
             }
         }
+        // --------------------------------------------------------
+        // DAY 4: Relationships, Foreign Keys & JOIN Queries
+        // --------------------------------------------------------
+
+        // 7. Implement GetEmployeeWithDepartmentAsync (INNER JOIN)
+        [HttpGet("employees/{id}/department")]
+        public async Task<IActionResult> GetEmployeeWithDepartmentAsync(int id)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    // INNER JOIN to get employee details along with their department name
+                    string query = @"
+                        SELECT e.Id, e.Name, e.Salary, d.Name AS DepartmentName 
+                        FROM Employees e 
+                        INNER JOIN Departments d ON e.DepartmentId = d.Id 
+                        WHERE e.Id = @Id";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@Id", id);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            if (await reader.ReadAsync())
+                            {
+                                // Mapping joined data to an anonymous object
+                                var result = new
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name")),
+                                    Salary = reader.GetDecimal(reader.GetOrdinal("Salary")),
+                                    DepartmentName = reader.GetString(reader.GetOrdinal("DepartmentName"))
+                                };
+
+                                return Ok(result);
+                            }
+                        }
+                    }
+                }
+
+                return NotFound($"No employee found or employee does not belong to a department. ID: {id}");
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
+
+        // 8. Implement GetEmployeesByDepartmentAsync (Ordered by Salary DESC)
+        [HttpGet("departments/{departmentId}/employees")]
+        public async Task<IActionResult> GetEmployeesByDepartmentAsync(int departmentId)
+        {
+            var employees = new List<object>();
+
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    // Query that orders department employees by Salary descending
+                    string query = @"
+                        SELECT Id, Name, Salary 
+                        FROM Employees 
+                        WHERE DepartmentId = @DepartmentId 
+                        ORDER BY Salary DESC";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@DepartmentId", departmentId);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                employees.Add(new
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name")),
+                                    Salary = reader.GetDecimal(reader.GetOrdinal("Salary"))
+                                });
+                            }
+                        }
+                    }
+                }
+
+                return Ok(employees);
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
+
+        // 9. Implement GetEmployeeTasksAsync
+        [HttpGet("employees/{employeeId}/tasks")]
+        public async Task<IActionResult> GetEmployeeTasksAsync(int employeeId)
+        {
+            var tasks = new List<object>();
+
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                        SELECT Id, Title 
+                        FROM EmployeeTasks 
+                        WHERE EmployeeId = @EmployeeId";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@EmployeeId", employeeId);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                tasks.Add(new
+                                {
+                                    TaskId = reader.GetInt32(reader.GetOrdinal("Id")),
+                                    TaskTitle = reader.GetString(reader.GetOrdinal("Title"))
+                                });
+                            }
+                        }
+                    }
+                }
+
+                return Ok(tasks);
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
     }
 }
