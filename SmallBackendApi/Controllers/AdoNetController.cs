@@ -178,5 +178,121 @@ namespace SmallBackendApi.Controllers
                 return StatusCode(500, $"Database error: {ex.Message}");
             }
         }
+        // --------------------------------------------------------
+        // DAY 3: CRUD, ExecuteNonQuery & Safe Parameters
+        // --------------------------------------------------------
+
+        // 4. Implement AddEmployeeAsync (Create)
+        [HttpPost("employees")]
+        public async Task<IActionResult> AddEmployeeAsync([FromBody] Employee employee)
+        {
+            if (string.IsNullOrWhiteSpace(employee.Name))
+            {
+                return BadRequest("Employee name is required.");
+            }
+
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    // Using parameterized query for safe INSERT
+                    string query = "INSERT INTO Employees (Name, Salary) VALUES (@Name, @Salary)";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@Name", employee.Name);
+                        command.Parameters.AddWithValue("@Salary", employee.Salary);
+
+                        // ExecuteNonQuery returns the number of affected rows
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        return Ok(new { Message = "Employee added successfully.", RowsAffected = rowsAffected });
+                    }
+                }
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
+
+        // 5. Implement UpdateEmployeeAsync (Update)
+        [HttpPut("employees/{id}")]
+        public async Task<IActionResult> UpdateEmployeeAsync(int id, [FromBody] Employee employee)
+        {
+            if (id != employee.Id)
+            {
+                return BadRequest("Employee ID in the URL does not match the ID in the body.");
+            }
+
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    // Using parameterized query for safe UPDATE
+                    string query = "UPDATE Employees SET Name = @Name, Salary = @Salary WHERE Id = @Id";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@Id", id);
+                        command.Parameters.AddWithValue("@Name", employee.Name);
+                        command.Parameters.AddWithValue("@Salary", employee.Salary);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        // Check if any row was actually updated
+                        if (rowsAffected == 0)
+                        {
+                            return NotFound($"No employee found with ID: {id}");
+                        }
+
+                        return Ok(new { Message = "Employee updated successfully.", RowsAffected = rowsAffected });
+                    }
+                }
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
+
+        // 6. Implement DeleteEmployeeAsync (Delete)
+        [HttpDelete("employees/{id}")]
+        public async Task<IActionResult> DeleteEmployeeAsync(int id)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    // Using parameterized query for safe DELETE
+                    string query = "DELETE FROM Employees WHERE Id = @Id";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@Id", id);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        // Check if the record existed before deleting
+                        if (rowsAffected == 0)
+                        {
+                            return NotFound($"No employee found with ID: {id}");
+                        }
+
+                        return Ok(new { Message = "Employee deleted successfully.", RowsAffected = rowsAffected });
+                    }
+                }
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Database error: {ex.Message}");
+            }
+        }
     }
 }
