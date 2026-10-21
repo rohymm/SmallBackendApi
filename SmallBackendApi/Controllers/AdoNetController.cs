@@ -419,5 +419,32 @@ namespace SmallBackendApi.Controllers
                 return StatusCode(500, $"Database error: {ex.Message}");
             }
         }
+
+        // --------------------------------------------------------
+        // DAY 6: Transactions & Organizing the Data Access Layer
+        // --------------------------------------------------------
+
+        [HttpPost("employees/with-initial-task")]
+        public async Task<IActionResult> CreateEmployeeWithTaskAsync([FromBody] Employee employee, [FromQuery] string taskTitle)
+        {
+            if (string.IsNullOrWhiteSpace(taskTitle))
+            {
+                return BadRequest("Task title is required in the query parameters.");
+            }
+
+            // Create an instance of the new DataAccess class
+            var dataAccess = new SmallBackendApi.DataAccess.EmployeeDataAccess();
+
+            bool isSuccess = await dataAccess.CreateEmployeeWithInitialTaskAsync(employee, taskTitle);
+
+            if (isSuccess)
+            {
+                return Ok("Employee and initial task created successfully as one unit of work.");
+            }
+            else
+            {
+                return StatusCode(500, "Transaction failed. Employee insert was rolled back.");
+            }
+        }
     }
 }
