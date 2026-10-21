@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using SmallBackendApi.Models;
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -15,16 +14,17 @@ namespace SmallBackendApi.Controllers
         private readonly string _connectionString = @"Server=(localdb)\mssqllocaldb;Database=EmployeeManagement;Trusted_Connection=True;TrustServerCertificate=True;";
 
         // --------------------------------------------------------
-        // DAY 1: Test Connection & Create Table
+        // DAY 1 (Refactored for DAY 5): Async Test Connection & Create Table
         // --------------------------------------------------------
         [HttpGet("test-connection")]
-        public IActionResult TestConnection()
+        public async Task<IActionResult> TestConnectionAsync()
         {
             try
             {
-                using (SqlConnection connection = new SqlConnection(_connectionString))
+                using (var connection = new SqlConnection(_connectionString))
                 {
-                    connection.Open();
+                    // Converted to OpenAsync
+                    await connection.OpenAsync();
 
                     string createTableQuery = @"
                         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Employees' AND xtype='U')
@@ -32,13 +32,15 @@ namespace SmallBackendApi.Controllers
                             CREATE TABLE Employees (
                                 Id INT PRIMARY KEY IDENTITY(1,1),
                                 Name NVARCHAR(100) NOT NULL,
-                                Salary DECIMAL(18,2) NOT NULL DEFAULT 0
+                                Salary DECIMAL(18,2) NOT NULL DEFAULT 0,
+                                DepartmentId INT NULL FOREIGN KEY REFERENCES Departments(Id)
                             )
                         END";
 
-                    using (SqlCommand command = new SqlCommand(createTableQuery, connection))
+                    using (var command = new SqlCommand(createTableQuery, connection))
                     {
-                        command.ExecuteNonQuery();
+                        // Converted to ExecuteNonQueryAsync
+                        await command.ExecuteNonQueryAsync();
                     }
 
                     return Ok("Connection opened successfully! 'Employees' table is ready.");
@@ -46,7 +48,8 @@ namespace SmallBackendApi.Controllers
             }
             catch (SqlException ex)
             {
-                return StatusCode(500, $"Oops! Could not connect to the database. Friendly Error: {ex.Message}");
+                // Explicit error handling
+                return StatusCode(500, $"Oops! Could not connect to the database. Technical Details: {ex.Message}");
             }
         }
 
@@ -54,7 +57,6 @@ namespace SmallBackendApi.Controllers
         // DAY 2: Reading Data & Object Mapping
         // --------------------------------------------------------
 
-        // 1. Retrieve all employees and map to List<Employee>
         [HttpGet("employees")]
         public async Task<IActionResult> GetAllEmployeesAsync()
         {
@@ -72,7 +74,6 @@ namespace SmallBackendApi.Controllers
                     {
                         using (var reader = await command.ExecuteReaderAsync())
                         {
-                            
                             while (await reader.ReadAsync())
                             {
                                 var employee = new Employee
@@ -96,7 +97,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 2. Retrieve a single employee by ID using a parameterized query
         [HttpGet("employees/{id}")]
         public async Task<IActionResult> GetEmployeeByIdAsync(int id)
         {
@@ -110,7 +110,6 @@ namespace SmallBackendApi.Controllers
 
                     using (var command = new SqlCommand(query, connection))
                     {
-                        
                         command.Parameters.AddWithValue("@Id", id);
 
                         using (var reader = await command.ExecuteReaderAsync())
@@ -138,7 +137,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 3. Retrieve employees with a salary greater than a specific value
         [HttpGet("employees/salary-greater-than/{salary}")]
         public async Task<IActionResult> GetEmployeesWithSalaryGreaterThanAsync(decimal salary)
         {
@@ -178,11 +176,11 @@ namespace SmallBackendApi.Controllers
                 return StatusCode(500, $"Database error: {ex.Message}");
             }
         }
+
         // --------------------------------------------------------
         // DAY 3: CRUD, ExecuteNonQuery & Safe Parameters
         // --------------------------------------------------------
 
-        // 4. Implement AddEmployeeAsync (Create)
         [HttpPost("employees")]
         public async Task<IActionResult> AddEmployeeAsync([FromBody] Employee employee)
         {
@@ -197,7 +195,6 @@ namespace SmallBackendApi.Controllers
                 {
                     await connection.OpenAsync();
 
-                    // Using parameterized query for safe INSERT
                     string query = "INSERT INTO Employees (Name, Salary) VALUES (@Name, @Salary)";
 
                     using (var command = new SqlCommand(query, connection))
@@ -205,7 +202,6 @@ namespace SmallBackendApi.Controllers
                         command.Parameters.AddWithValue("@Name", employee.Name);
                         command.Parameters.AddWithValue("@Salary", employee.Salary);
 
-                        // ExecuteNonQuery returns the number of affected rows
                         int rowsAffected = await command.ExecuteNonQueryAsync();
 
                         return Ok(new { Message = "Employee added successfully.", RowsAffected = rowsAffected });
@@ -218,7 +214,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 5. Implement UpdateEmployeeAsync (Update)
         [HttpPut("employees/{id}")]
         public async Task<IActionResult> UpdateEmployeeAsync(int id, [FromBody] Employee employee)
         {
@@ -233,7 +228,6 @@ namespace SmallBackendApi.Controllers
                 {
                     await connection.OpenAsync();
 
-                    // Using parameterized query for safe UPDATE
                     string query = "UPDATE Employees SET Name = @Name, Salary = @Salary WHERE Id = @Id";
 
                     using (var command = new SqlCommand(query, connection))
@@ -244,7 +238,6 @@ namespace SmallBackendApi.Controllers
 
                         int rowsAffected = await command.ExecuteNonQueryAsync();
 
-                        // Check if any row was actually updated
                         if (rowsAffected == 0)
                         {
                             return NotFound($"No employee found with ID: {id}");
@@ -260,7 +253,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 6. Implement DeleteEmployeeAsync (Delete)
         [HttpDelete("employees/{id}")]
         public async Task<IActionResult> DeleteEmployeeAsync(int id)
         {
@@ -270,7 +262,6 @@ namespace SmallBackendApi.Controllers
                 {
                     await connection.OpenAsync();
 
-                    // Using parameterized query for safe DELETE
                     string query = "DELETE FROM Employees WHERE Id = @Id";
 
                     using (var command = new SqlCommand(query, connection))
@@ -279,7 +270,6 @@ namespace SmallBackendApi.Controllers
 
                         int rowsAffected = await command.ExecuteNonQueryAsync();
 
-                        // Check if the record existed before deleting
                         if (rowsAffected == 0)
                         {
                             return NotFound($"No employee found with ID: {id}");
@@ -294,11 +284,11 @@ namespace SmallBackendApi.Controllers
                 return StatusCode(500, $"Database error: {ex.Message}");
             }
         }
+
         // --------------------------------------------------------
         // DAY 4: Relationships, Foreign Keys & JOIN Queries
         // --------------------------------------------------------
 
-        // 7. Implement GetEmployeeWithDepartmentAsync (INNER JOIN)
         [HttpGet("employees/{id}/department")]
         public async Task<IActionResult> GetEmployeeWithDepartmentAsync(int id)
         {
@@ -308,7 +298,6 @@ namespace SmallBackendApi.Controllers
                 {
                     await connection.OpenAsync();
 
-                    // INNER JOIN to get employee details along with their department name
                     string query = @"
                         SELECT e.Id, e.Name, e.Salary, d.Name AS DepartmentName 
                         FROM Employees e 
@@ -323,7 +312,6 @@ namespace SmallBackendApi.Controllers
                         {
                             if (await reader.ReadAsync())
                             {
-                                // Mapping joined data to an anonymous object
                                 var result = new
                                 {
                                     Id = reader.GetInt32(reader.GetOrdinal("Id")),
@@ -346,7 +334,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 8. Implement GetEmployeesByDepartmentAsync (Ordered by Salary DESC)
         [HttpGet("departments/{departmentId}/employees")]
         public async Task<IActionResult> GetEmployeesByDepartmentAsync(int departmentId)
         {
@@ -358,7 +345,6 @@ namespace SmallBackendApi.Controllers
                 {
                     await connection.OpenAsync();
 
-                    // Query that orders department employees by Salary descending
                     string query = @"
                         SELECT Id, Name, Salary 
                         FROM Employees 
@@ -392,7 +378,6 @@ namespace SmallBackendApi.Controllers
             }
         }
 
-        // 9. Implement GetEmployeeTasksAsync
         [HttpGet("employees/{employeeId}/tasks")]
         public async Task<IActionResult> GetEmployeeTasksAsync(int employeeId)
         {
