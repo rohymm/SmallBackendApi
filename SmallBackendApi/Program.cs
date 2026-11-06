@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace SmallBackendApi
 {
     public class Program
@@ -6,16 +8,17 @@ namespace SmallBackendApi
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
-            builder.Services.AddDbContext<AppDbContext>();
+            // Register the DbContext and read the connection string from appsettings.json
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-            // This updated line fixes the object cycle error
+            // Ignore object cycles (Employee -> Department -> Employees ...) in JSON
             builder.Services.AddControllers().AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
             });
 
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            // Swagger/OpenAPI
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
@@ -31,7 +34,6 @@ namespace SmallBackendApi
             app.UseHttpsRedirection();
 
             app.UseAuthorization();
-
 
             app.MapControllers();
 

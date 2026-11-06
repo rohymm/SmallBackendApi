@@ -1,17 +1,18 @@
-﻿using System.Collections.Generic;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Models;
+
 namespace SmallBackendApi
 {
-   
     public class AppDbContext : DbContext
     {
+        // The options come from Program.cs (dependency injection)
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        {
+        }
+
+        // Each DbSet is a table in the database
         public DbSet<Department> Departments { get; set; }
         public DbSet<Employee> Employees { get; set; }
-
-        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        {
-            optionsBuilder.UseSqlServer(@"Server=(localdb)\mssqllocaldb;Database=SmallBackendDb;Trusted_Connection=True;TrustServerCertificate=True;");
-        }
+        public DbSet<EmployeeTask> EmployeeTasks { get; set; }
     }
 }
