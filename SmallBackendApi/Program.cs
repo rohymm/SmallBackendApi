@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using SmallBackendApi.Middleware;
+using SmallBackendApi.Services;
 
 namespace SmallBackendApi
 {
@@ -12,6 +14,9 @@ namespace SmallBackendApi
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+            // Register the service: Scoped = one instance per HTTP request
+            builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+
             // Ignore object cycles (Employee -> Department -> Employees ...) in JSON
             builder.Services.AddControllers().AddJsonOptions(options =>
             {
@@ -23,6 +28,9 @@ namespace SmallBackendApi
             builder.Services.AddSwaggerGen();
 
             var app = builder.Build();
+
+            // Custom middleware: placed first so it measures the whole pipeline
+            app.UseMiddleware<RequestTimingMiddleware>();
 
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
