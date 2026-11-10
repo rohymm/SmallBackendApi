@@ -17,8 +17,8 @@ namespace SmallBackendApi
             // Register the service: Scoped = one instance per HTTP request
             builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 
-            // Ignore object cycles (Employee -> Department -> Employees ...) in JSON
-            builder.Services.AddControllers().AddJsonOptions(options =>
+            // Controllers + Views (supports both API controllers and MVC controllers)
+            builder.Services.AddControllersWithViews().AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
             });
@@ -40,10 +40,19 @@ namespace SmallBackendApi
             }
 
             app.UseHttpsRedirection();
+            app.UseStaticFiles();
+
+            app.UseRouting();
 
             app.UseAuthorization();
 
+            // API controllers use attribute routing
             app.MapControllers();
+
+            // MVC controllers use this default route: /Controller/Action/Id
+            app.MapControllerRoute(
+                name: "default",
+                pattern: "{controller=EmployeesMvc}/{action=Index}/{id?}");
 
             app.Run();
         }
