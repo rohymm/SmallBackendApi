@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
+using SmallBackendApi.Dtos;
 using SmallBackendApi.Models;
 
 namespace SmallBackendApi.Controllers
@@ -11,54 +11,160 @@ namespace SmallBackendApi.Controllers
     {
         private readonly AppDbContext _context;
 
-        // The database context is injected here automatically
         public EmployeesController(AppDbContext context)
         {
             _context = context;
         }
 
-        // GET: api/employees
+        /// <summary>Get all employees, optionally filtered by department.</summary>
+        // GET: api/employees?departmentId=1  (query parameter)
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<ActionResult<List<EmployeeDto>>> GetAll([FromQuery] int? departmentId)
         {
-            // Includes the Department data when fetching employees
-            var employees = _context.Employees.Include(e => e.Department).ToList();
+            var query = _context.Employees.AsNoTracking().AsQueryable();
+
+            if (departmentId.HasValue)
+            {
+                query = query.Where(e => e.DepartmentId == departmentId.Value);
+            }
+
+            var employees = await query
+                .Select(e => new EmployeeDto
+                {
+                    Id = e.Id,
+                    Name = e.Name,
+                    Salary = e.Salary,
+                    HireDate = e.HireDate,
+                    DepartmentId = e.DepartmentId,
+                    DepartmentName = e.Department!.Name
+                })
+                .ToListAsync();
+
             return Ok(employees);
         }
 
+        /// <summary>Get one employee by id.</summary>
+        // GET: api/employees/5  (route parameter)
+        [HttpGet("{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<EmployeeDto>> GetById(int id)
+        {
+            var employee = await _context.Employees
+                .AsNoTracking()
+                .Where(e => e.Id == id)
+                .Select(e => new EmployeeDto
+                {
+                    Id = e.Id,
+                    Name = e.Name,
+                    Salary = e.Salary,
+                    HireDate = e.HireDate,
+                    DepartmentId = e.DepartmentId,
+                    DepartmentName = e.Department!.Name
+                })
+                .FirstOrDefaultAsync();
+
+            if (employee == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(employee);
+        }
+
+        /// <summary>Create a new employee. Returns 201 with a Location header.</summary>
         // POST: api/employees
         [HttpPost]
-        public IActionResult Create(Employee employee)
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<ActionResult<EmployeeDto>> Create(CreateEmployeeDto dto)
         {
+            // The department must exist, otherwise the foreign key fails (400, not 500)
+            var department = await _context.Departments.FindAsync(dto.DepartmentId);
+            if (department == null)
+            {
+                return BadRequest("Department does not exist.");
+            }
+
+            // 409 Conflict: an employee with the same name already exists
+            bool nameExists = await _context.Employees.AnyAsync(e => e.Name == dto.Name);
+            if (nameExists)
+            {
+                return Conflict("An employee with this name already exists.");
+            }
+
+            var employee = new Employee
+            {
+                Name = dto.Name,
+                Salary = dto.Salary,
+                DepartmentId = dto.DepartmentId,
+                HireDate = DateTime.Now
+            };
+
             _context.Employees.Add(employee);
-            _context.SaveChanges();
-            return Ok(employee);
+            await _context.SaveChangesAsync();
+
+            var result = new EmployeeDto
+            {
+                Id = employee.Id,
+                Name = employee.Name,
+                Salary = employee.Salary,
+                HireDate = employee.HireDate,
+                DepartmentId = employee.DepartmentId,
+                DepartmentName = department.Name
+            };
+
+            // 201 Created + Location header pointing to GET api/employees/{id}
+            return CreatedAtAction(nameof(GetById), new { id = employee.Id }, result);
         }
 
+        /// <summary>Update an existing employee.</summary>
         // PUT: api/employees/5
         [HttpPut("{id}")]
-        public IActionResult Update(int id, Employee updatedEmployee)
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> Update(int id, UpdateEmployeeDto dto)
         {
-            var employee = _context.Employees.Find(id);
-            if (employee == null) return NotFound();
+            var employee = await _context.Employees.FindAsync(id);
+            if (employee == null)
+            {
+                return NotFound();
+            }
 
-            employee.Name = updatedEmployee.Name;
-            employee.DepartmentId = updatedEmployee.DepartmentId;
+            bool departmentExists = await _context.Departments.AnyAsync(d => d.Id == dto.DepartmentId);
+            if (!departmentExists)
+            {
+                return BadRequest("Department does not exist.");
+            }
 
-            _context.SaveChanges();
-            return Ok(employee);
+            employee.Name = dto.Name;
+            employee.Salary = dto.Salary;
+            employee.DepartmentId = dto.DepartmentId;
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
 
+        /// <summary>Delete an employee.</summary>
         // DELETE: api/employees/5
         [HttpDelete("{id}")]
-        public IActionResult Delete(int id)
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> Delete(int id)
         {
-            var employee = _context.Employees.Find(id);
-            if (employee == null) return NotFound();
+            var employee = await _context.Employees.FindAsync(id);
+            if (employee == null)
+            {
+                return NotFound();
+            }
 
             _context.Employees.Remove(employee);
-            _context.SaveChanges();
-            return Ok("Employee deleted successfully");
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
     }
 }
