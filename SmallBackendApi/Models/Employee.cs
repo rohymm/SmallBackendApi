@@ -4,8 +4,10 @@
     {
         public decimal Salary { get; set; }
 
-        // New property added for the review challenge
         public DateTime HireDate { get; set; }
+
+        // New in day 6: unique email for each employee
+        public string? Email { get; set; }
 
         public int DepartmentId { get; set; }
         public Department? Department { get; set; }
