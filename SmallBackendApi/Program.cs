@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using SmallBackendApi.Middleware;
+using SmallBackendApi.Services;
 
 namespace SmallBackendApi
 {
@@ -7,16 +10,30 @@ namespace SmallBackendApi
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-            builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+
+            // Register the global exception handler and ProblemDetails support
+            builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+            builder.Services.AddProblemDetails();
+
+            builder.Services.AddControllersWithViews().AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+            });
+
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
+            // Must be first, so it catches exceptions from everything after it
+            app.UseExceptionHandler();
+
+            app.UseMiddleware<RequestTimingMiddleware>();
+
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
@@ -24,11 +41,17 @@ namespace SmallBackendApi
             }
 
             app.UseHttpsRedirection();
+            app.UseStaticFiles();
+
+            app.UseRouting();
 
             app.UseAuthorization();
 
-
             app.MapControllers();
+
+            app.MapControllerRoute(
+                name: "default",
+                pattern: "{controller=EmployeesMvc}/{action=Index}/{id?}");
 
             app.Run();
         }
