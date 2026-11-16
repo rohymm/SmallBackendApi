@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Dtos;
 using SmallBackendApi.Models;
@@ -18,19 +19,49 @@ namespace SmallBackendApi.Controllers
             _logger = logger;
         }
 
-        /// <summary>Get all employees, optionally filtered by department.</summary>
+        /// <summary>List employees with filter, search, sort and pagination.</summary>
+        // GET: api/employees?departmentId=2&search=mo&sortBy=salary&sortDir=desc&page=1&pageSize=10
         [HttpGet]
-        public async Task<ActionResult<List<EmployeeDto>>> GetAll([FromQuery] int? departmentId)
+        [EnableRateLimiting("fixed")]
+        public async Task<ActionResult<PagedResult<EmployeeDto>>> GetAll(
+            [FromQuery] EmployeeQueryParams q,
+            CancellationToken cancellationToken)
         {
-            var query = _context.Employees.AsNoTracking().AsQueryable();
+            // Start with an IQueryable: nothing runs against the database yet
+            IQueryable<Employee> query = _context.Employees.AsNoTracking();
 
-            if (departmentId.HasValue)
+            // Filter
+            if (q.DepartmentId.HasValue)
             {
-                query = query.Where(e => e.DepartmentId == departmentId.Value);
+                query = query.Where(e => e.DepartmentId == q.DepartmentId.Value);
             }
 
-            var employees = await query
-                .Select(e => new EmployeeDto
+            // Search (name or email)
+            if (!string.IsNullOrWhiteSpace(q.Search))
+            {
+                var term = q.Search.Trim();
+                query = query.Where(e => e.Name.Contains(term) || (e.Email != null && e.Email.Contains(term)));
+            }
+
+            // Sort: only safe, known fields (never trust the client string directly)
+            bool desc = q.SortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
+
+            IOrderedQueryable<Employee> ordered = q.SortBy.ToLower() switch
+            {
+                "salary" => desc ? query.OrderByDescending(e => e.Salary) : query.OrderBy(e => e.Salary),
+                "hiredate" => desc ? query.OrderByDescending(e => e.HireDate) : query.OrderBy(e => e.HireDate),
+                _ => desc ? query.OrderByDescending(e => e.Name) : query.OrderBy(e => e.Name)
+            };
+
+            // Count BEFORE paging (one SQL COUNT query)
+            int totalCount = await query.CountAsync(cancellationToken);
+
+            // Stable ordering: Id as a tie-breaker so pages never overlap
+            var items = await ordered
+                .ThenBy(e => e.Id)
+                .Skip((q.Page - 1) * q.PageSize)
+                .Take(q.PageSize)
+                .Select(e => new EmployeeDto   // Projection: only the columns we need
                 {
                     Id = e.Id,
                     Name = e.Name,
@@ -40,16 +71,22 @@ namespace SmallBackendApi.Controllers
                     DepartmentId = e.DepartmentId,
                     DepartmentName = e.Department!.Name
                 })
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
-            return Ok(employees);
+            return Ok(new PagedResult<EmployeeDto>
+            {
+                Items = items,
+                Page = q.Page,
+                PageSize = q.PageSize,
+                TotalCount = totalCount
+            });
         }
 
         /// <summary>Get one employee by id.</summary>
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<EmployeeDto>> GetById(int id)
+        public async Task<ActionResult<EmployeeDto>> GetById(int id, CancellationToken cancellationToken)
         {
             var employee = await _context.Employees
                 .AsNoTracking()
@@ -64,7 +101,7 @@ namespace SmallBackendApi.Controllers
                     DepartmentId = e.DepartmentId,
                     DepartmentName = e.Department!.Name
                 })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(cancellationToken);
 
             if (employee == null)
             {
@@ -187,6 +224,5 @@ namespace SmallBackendApi.Controllers
 
             return NoContent();
         }
-        
     }
 }

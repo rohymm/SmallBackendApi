@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Middleware;
 using SmallBackendApi.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 namespace SmallBackendApi
 {
@@ -19,6 +21,19 @@ namespace SmallBackendApi
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
             builder.Services.AddProblemDetails();
 
+            // Rate limiting: each client can send 5 requests per 10 seconds
+            builder.Services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                options.AddFixedWindowLimiter("fixed", limiter =>
+                {
+                    limiter.PermitLimit = 5;
+                    limiter.Window = TimeSpan.FromSeconds(10);
+                    limiter.QueueLimit = 0;
+                });
+            });
+
             builder.Services.AddControllersWithViews().AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
@@ -29,7 +44,7 @@ namespace SmallBackendApi
 
             var app = builder.Build();
 
-            // Must be first, so it catches exceptions from everything after it
+            // Must be first so it catches exceptions from everything after it
             app.UseExceptionHandler();
 
             app.UseMiddleware<RequestTimingMiddleware>();
@@ -44,6 +59,8 @@ namespace SmallBackendApi
             app.UseStaticFiles();
 
             app.UseRouting();
+
+            app.UseRateLimiter();
 
             app.UseAuthorization();
 
