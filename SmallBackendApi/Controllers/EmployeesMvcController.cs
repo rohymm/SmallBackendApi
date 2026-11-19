@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Models;
@@ -7,6 +8,7 @@ using SmallBackendApi.ViewModels;
 namespace SmallBackendApi.Controllers
 {
     // MVC controller: returns Razor views (HTML pages), not JSON
+    [Authorize]
     public class EmployeesMvcController : Controller
     {
         private readonly AppDbContext _context;
@@ -55,9 +57,17 @@ namespace SmallBackendApi.Controllers
         [HttpPost]
         public async Task<IActionResult> Create(CreateEmployeeViewModel model)
         {
-            // Validation failed: show the same form again with error messages
             if (!ModelState.IsValid)
             {
+                await LoadDepartmentsAsync();
+                return View(model);
+            }
+
+            // The email must be unique
+            bool emailExists = await _context.Employees.AnyAsync(e => e.Email == model.Email);
+            if (emailExists)
+            {
+                ModelState.AddModelError(nameof(model.Email), "This email is already used");
                 await LoadDepartmentsAsync();
                 return View(model);
             }
@@ -66,6 +76,7 @@ namespace SmallBackendApi.Controllers
             var employee = new Employee
             {
                 Name = model.Name,
+                Email = model.Email,
                 Salary = model.Salary,
                 DepartmentId = model.DepartmentId,
                 HireDate = model.HireDate
@@ -91,6 +102,7 @@ namespace SmallBackendApi.Controllers
             {
                 Id = employee.Id,
                 Name = employee.Name,
+                Email = employee.Email ?? string.Empty,
                 Salary = employee.Salary,
                 DepartmentId = employee.DepartmentId
             };
@@ -121,7 +133,16 @@ namespace SmallBackendApi.Controllers
                 return NotFound();
             }
 
+            bool emailUsed = await _context.Employees.AnyAsync(e => e.Email == model.Email && e.Id != id);
+            if (emailUsed)
+            {
+                ModelState.AddModelError(nameof(model.Email), "This email is already used by another employee");
+                await LoadDepartmentsAsync();
+                return View(model);
+            }
+
             employee.Name = model.Name;
+            employee.Email = model.Email;
             employee.Salary = model.Salary;
             employee.DepartmentId = model.DepartmentId;
 

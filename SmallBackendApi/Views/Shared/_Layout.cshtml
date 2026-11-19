@@ -10,6 +10,20 @@
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <a class="navbar-brand" asp-controller="EmployeesMvc" asp-action="Index">Employees</a>
+            <div class="d-flex align-items-center text-white">
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <span class="me-3">Hello, @User.Identity.Name</span>
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                        <button type="submit" class="btn btn-sm btn-outline-light">Logout</button>
+                    </form>
+                }
+                else
+                {
+                    <a class="btn btn-sm btn-outline-light me-2" asp-controller="Account" asp-action="Login">Login</a>
+                    <a class="btn btn-sm btn-outline-light" asp-controller="Account" asp-action="Register">Register</a>
+                }
+            </div>
         </div>
     </nav>
 
@@ -17,4 +31,4 @@
         @RenderBody()
     </div>
 </body>
-</html>
+</html>  

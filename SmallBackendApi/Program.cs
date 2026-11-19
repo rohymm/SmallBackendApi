@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Middleware;
+using SmallBackendApi.Models;
 using SmallBackendApi.Services;
-using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 namespace SmallBackendApi
@@ -15,13 +17,28 @@ namespace SmallBackendApi
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+            // Identity: users, password hashing, roles, stored in our database
+            builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+            {
+                options.Password.RequiredLength = 6;
+                options.Password.RequireNonAlphanumeric = false;
+                options.User.RequireUniqueEmail = true;
+            })
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddDefaultTokenProviders();
+
+            // Where to send users who are not signed in
+            builder.Services.ConfigureApplicationCookie(options =>
+            {
+                options.LoginPath = "/Account/Login";
+                options.AccessDeniedPath = "/Account/AccessDenied";
+            });
+
             builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 
-            // Register the global exception handler and ProblemDetails support
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
             builder.Services.AddProblemDetails();
 
-            // Rate limiting: each client can send 5 requests per 10 seconds
             builder.Services.AddRateLimiter(options =>
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -44,7 +61,6 @@ namespace SmallBackendApi
 
             var app = builder.Build();
 
-            // Must be first so it catches exceptions from everything after it
             app.UseExceptionHandler();
 
             app.UseMiddleware<RequestTimingMiddleware>();
@@ -62,6 +78,8 @@ namespace SmallBackendApi
 
             app.UseRateLimiter();
 
+            // Order matters: who are you (Authentication) BEFORE what can you do (Authorization)
+            app.UseAuthentication();
             app.UseAuthorization();
 
             app.MapControllers();
