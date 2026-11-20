@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Dtos;
 using SmallBackendApi.Models;
+using Microsoft.AspNetCore.Authorization; 
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace SmallBackendApi.Controllers
 {
-    [Route("api/[controller]")]
+       [Route("api/[controller]")]
     [ApiController]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class EmployeesController : ControllerBase
     {
         private readonly AppDbContext _context;
