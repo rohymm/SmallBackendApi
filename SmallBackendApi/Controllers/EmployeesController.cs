@@ -1,15 +1,16 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SmallBackendApi.Dtos;
 using SmallBackendApi.Models;
-using Microsoft.AspNetCore.Authorization; 
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace SmallBackendApi.Controllers
 {
-       [Route("api/[controller]")]
+    [Route("api/[controller]")]
     [ApiController]
+    // Any signed-in user (valid JWT) can reach this controller; stricter rules are per action
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class EmployeesController : ControllerBase
     {
@@ -23,30 +24,25 @@ namespace SmallBackendApi.Controllers
         }
 
         /// <summary>List employees with filter, search, sort and pagination.</summary>
-        // GET: api/employees?departmentId=2&search=mo&sortBy=salary&sortDir=desc&page=1&pageSize=10
         [HttpGet]
         [EnableRateLimiting("fixed")]
         public async Task<ActionResult<PagedResult<EmployeeDto>>> GetAll(
             [FromQuery] EmployeeQueryParams q,
             CancellationToken cancellationToken)
         {
-            // Start with an IQueryable: nothing runs against the database yet
             IQueryable<Employee> query = _context.Employees.AsNoTracking();
 
-            // Filter
             if (q.DepartmentId.HasValue)
             {
                 query = query.Where(e => e.DepartmentId == q.DepartmentId.Value);
             }
 
-            // Search (name or email)
             if (!string.IsNullOrWhiteSpace(q.Search))
             {
                 var term = q.Search.Trim();
                 query = query.Where(e => e.Name.Contains(term) || (e.Email != null && e.Email.Contains(term)));
             }
 
-            // Sort: only safe, known fields (never trust the client string directly)
             bool desc = q.SortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
 
             IOrderedQueryable<Employee> ordered = q.SortBy.ToLower() switch
@@ -56,15 +52,13 @@ namespace SmallBackendApi.Controllers
                 _ => desc ? query.OrderByDescending(e => e.Name) : query.OrderBy(e => e.Name)
             };
 
-            // Count BEFORE paging (one SQL COUNT query)
             int totalCount = await query.CountAsync(cancellationToken);
 
-            // Stable ordering: Id as a tie-breaker so pages never overlap
             var items = await ordered
                 .ThenBy(e => e.Id)
                 .Skip((q.Page - 1) * q.PageSize)
                 .Take(q.PageSize)
-                .Select(e => new EmployeeDto   // Projection: only the columns we need
+                .Select(e => new EmployeeDto
                 {
                     Id = e.Id,
                     Name = e.Name,
@@ -108,7 +102,6 @@ namespace SmallBackendApi.Controllers
 
             if (employee == null)
             {
-                // Expected error: the client asked for something that does not exist
                 _logger.LogWarning("Employee {EmployeeId} was not found", id);
                 return NotFound();
             }
@@ -116,14 +109,15 @@ namespace SmallBackendApi.Controllers
             return Ok(employee);
         }
 
-        /// <summary>Create a new employee. Returns 201 with a Location header.</summary>
+        /// <summary>Create a new employee (Manager or Admin).</summary>
         [HttpPost]
+        [Authorize(Roles = "Manager,Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         public async Task<ActionResult<EmployeeDto>> Create(CreateEmployeeDto dto)
         {
-            // Business validation: the department must exist
             var department = await _context.Departments.FindAsync(dto.DepartmentId);
             if (department == null)
             {
@@ -131,7 +125,6 @@ namespace SmallBackendApi.Controllers
                 return BadRequest("Department does not exist.");
             }
 
-            // Business validation: the email must be unique
             bool emailExists = await _context.Employees.AnyAsync(e => e.Email == dto.Email);
             if (emailExists)
             {
@@ -151,7 +144,6 @@ namespace SmallBackendApi.Controllers
             _context.Employees.Add(employee);
             await _context.SaveChangesAsync();
 
-            // Log the id only, not the email (avoid sensitive data in logs)
             _logger.LogInformation("Employee {EmployeeId} was created in department {DepartmentId}", employee.Id, employee.DepartmentId);
 
             var result = new EmployeeDto
@@ -168,10 +160,12 @@ namespace SmallBackendApi.Controllers
             return CreatedAtAction(nameof(GetById), new { id = employee.Id }, result);
         }
 
-        /// <summary>Update an existing employee.</summary>
+        /// <summary>Update an employee (policy: Admin, or Manager with the claim).</summary>
         [HttpPut("{id}")]
+        [Authorize(Policy = "CanManageEmployees", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         public async Task<IActionResult> Update(int id, UpdateEmployeeDto dto)
@@ -189,7 +183,6 @@ namespace SmallBackendApi.Controllers
                 return BadRequest("Department does not exist.");
             }
 
-            // The email must stay unique (ignore the employee we are updating)
             bool emailUsed = await _context.Employees.AnyAsync(e => e.Email == dto.Email && e.Id != id);
             if (emailUsed)
             {
@@ -208,9 +201,11 @@ namespace SmallBackendApi.Controllers
             return NoContent();
         }
 
-        /// <summary>Delete an employee.</summary>
+        /// <summary>Delete an employee (Admin only).</summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)
         {

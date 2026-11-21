@@ -15,9 +15,8 @@ namespace SmallBackendApi.Services
             _configuration = configuration;
         }
 
-        public (string Token, DateTime ExpiresAt) CreateToken(ApplicationUser user)
+        public (string Token, DateTime ExpiresAt) CreateToken(ApplicationUser user, IList<string> roles, IList<Claim> userClaims)
         {
-            // Claims = facts about the user that go inside the token
             var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id),
@@ -25,6 +24,15 @@ namespace SmallBackendApi.Services
                 new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+
+            // Each role becomes a claim, so [Authorize(Roles = "...")] can read it
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
+
+            // Extra claims stored for the user (like permission = can_manage_employees)
+            claims.AddRange(userClaims);
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

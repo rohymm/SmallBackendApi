@@ -14,7 +14,7 @@ namespace SmallBackendApi
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
 
@@ -36,8 +36,6 @@ namespace SmallBackendApi
                 options.AccessDeniedPath = "/Account/AccessDenied";
             });
 
-            // JWT bearer: validates the token sent in "Authorization: Bearer <token>"
-            // Only used by controllers/endpoints that ask for it by scheme name
             builder.Services.AddAuthentication()
                 .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
                 {
@@ -54,6 +52,16 @@ namespace SmallBackendApi
                         ClockSkew = TimeSpan.Zero
                     };
                 });
+
+            // Policy: Admin can always manage; a Manager needs the claim "can_manage_employees"
+            builder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy("CanManageEmployees", policy =>
+                    policy.RequireAssertion(context =>
+                        context.User.IsInRole("Admin") ||
+                        (context.User.IsInRole("Manager") &&
+                         context.User.HasClaim("permission", "can_manage_employees"))));
+            });
 
             builder.Services.AddScoped<IEmployeeService, EmployeeService>();
             builder.Services.AddScoped<TokenService>();
@@ -81,7 +89,6 @@ namespace SmallBackendApi
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>
             {
-                // Adds the "Authorize" button in Swagger so we can paste the token
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Name = "Authorization",
@@ -105,6 +112,12 @@ namespace SmallBackendApi
             });
 
             var app = builder.Build();
+
+            using (var scope = app.Services.CreateScope())
+            {
+                var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+                await IdentityRoleSeeder.SeedAsync(roleManager);
+            }
 
             app.UseExceptionHandler();
 
@@ -132,7 +145,7 @@ namespace SmallBackendApi
                 name: "default",
                 pattern: "{controller=EmployeesMvc}/{action=Index}/{id?}");
 
-            app.Run();
+            await app.RunAsync();
         }
     }
 }
